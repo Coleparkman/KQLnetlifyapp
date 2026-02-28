@@ -1,72 +1,167 @@
 /* ═══════════════════════════════════════════════════════
    KQL Practice App  –  app.js
+   Features: Save/resume progress, retry wrong answers (½ pts), PWA-ready
    ═══════════════════════════════════════════════════════ */
 
-// ─── State ───────────────────────────────────────────────
-let allQuestions = [];
-let sessionQuestions = [];
-let currentIdx = 0;
-let score = 0;
-let correctCount = 0;
-let attempted = 0;
-let hintUsed = false;
-let answered = false;
-let startLevel = 1;
+// ─── Constants ────────────────────────────────────────────
+const SAVE_KEY    = 'kql-progress-v2';
+const PTS_CORRECT = 10;
+const PTS_HINT    = 5;   // correct but used hint
+const PTS_RETRY   = 5;   // correct on retry
+const PTS_RETRY_H = 3;   // correct on retry with hint
 
-// Per-level tracking
-const levelStats = { 1:{correct:0,total:0}, 2:{correct:0,total:0}, 3:{correct:0,total:0}, 4:{correct:0,total:0}, 5:{correct:0,total:0} };
+// ─── State ────────────────────────────────────────────────
+let allQuestions      = [];
+let sessionQuestions  = [];
+let currentIdx        = 0;
+let score             = 0;
+let correctCount      = 0;
+let attempted         = 0;
+let hintUsed          = false;
+let answered          = false;
+let startLevel        = 1;
+let wrongIds          = new Set();  // IDs answered incorrectly this session
+let isRetryMode       = false;
+
+// Per-level tracking  { level: { c: correct, t: total } }
+const levelStats = { 1:{c:0,t:0}, 2:{c:0,t:0}, 3:{c:0,t:0}, 4:{c:0,t:0}, 5:{c:0,t:0} };
 
 // Drag state
-let bankTokens = [];   // {id, text} objects in bank
-let answerTokens = []; // {id, text} objects in answer area
+let bankTokens   = [];   // [{id, text}]
+let answerTokens = [];   // [{id, text}]
 
-// ─── Helpers ─────────────────────────────────────────────
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+// ─── Persistence ──────────────────────────────────────────
+function saveProgress() {
+  if (isRetryMode) return; // don't overwrite main save during retry
+  const state = {
+    version: 2,
+    ts: Date.now(),
+    startLevel,
+    sessionIds:  sessionQuestions.map(q => q.id),
+    currentIdx,
+    score,
+    correctCount,
+    attempted,
+    levelStats:  JSON.parse(JSON.stringify(levelStats)),
+    wrongIds:    [...wrongIds],
+  };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (_) {}
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+function clearSaved() {
+  try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+}
+
+function buildIdMap() {
+  return Object.fromEntries(allQuestions.map(q => [q.id, q]));
 }
 
 // ─── Init ─────────────────────────────────────────────────
 function init() {
   allQuestions = window.QUESTIONS || [];
 
+  // Wire up buttons
   document.getElementById('start-btn').addEventListener('click', startQuiz);
   document.getElementById('hint-btn').addEventListener('click', showHint);
   document.getElementById('submit-btn').addEventListener('click', submitAnswer);
   document.getElementById('next-btn').addEventListener('click', nextQuestion);
   document.getElementById('skip-btn').addEventListener('click', skipQuestion);
   document.getElementById('clear-btn').addEventListener('click', clearDrag);
-  document.getElementById('restart-btn').addEventListener('click', () => showScreen('welcome-screen'));
-  document.getElementById('back-home-btn').addEventListener('click', () => showScreen('welcome-screen'));
+  document.getElementById('restart-btn').addEventListener('click', () => { clearSaved(); showScreen('welcome-screen'); });
+  document.getElementById('back-home-btn').addEventListener('click', () => { clearSaved(); showScreen('welcome-screen'); });
+  document.getElementById('retry-btn').addEventListener('click', startRetry);
+  document.getElementById('continue-btn').addEventListener('click', continueSaved);
+  document.getElementById('new-game-btn').addEventListener('click', () => {
+    clearSaved();
+    hide('continue-banner');
+  });
+
+  // Check for saved progress
+  const saved = loadSaved();
+  if (saved && saved.sessionIds && saved.currentIdx < saved.sessionIds.length) {
+    const pct = Math.round((saved.currentIdx / saved.sessionIds.length) * 100);
+    document.getElementById('continue-detail').textContent =
+      `Level ${saved.startLevel || 1} · Q${saved.currentIdx + 1} of ${saved.sessionIds.length} · Score ${saved.score}`;
+    show('continue-banner');
+  }
 }
 
+// ─── Continue saved session ────────────────────────────────
+function continueSaved() {
+  const saved = loadSaved();
+  if (!saved) return;
+
+  hide('continue-banner');
+  isRetryMode = false;
+
+  // Restore state
+  startLevel   = saved.startLevel || 1;
+  currentIdx   = saved.currentIdx || 0;
+  score        = saved.score || 0;
+  correctCount = saved.correctCount || 0;
+  attempted    = saved.attempted || 0;
+  wrongIds     = new Set(saved.wrongIds || []);
+  if (saved.levelStats) {
+    [1,2,3,4,5].forEach(l => {
+      if (saved.levelStats[l]) {
+        levelStats[l].c = saved.levelStats[l].c || 0;
+        levelStats[l].t = saved.levelStats[l].t || 0;
+      }
+    });
+  }
+
+  // Rebuild session from saved IDs
+  const map = buildIdMap();
+  sessionQuestions = (saved.sessionIds || []).map(id => map[id]).filter(Boolean);
+
+  updateScore();
+  showScreen('quiz-screen');
+  renderQuestion();
+}
+
+// ─── Start fresh quiz ──────────────────────────────────────
 function startQuiz() {
-  startLevel = parseInt(document.getElementById('start-level').value) || 1;
+  clearSaved();
+  hide('continue-banner');
+  startLevel   = parseInt(document.getElementById('start-level').value) || 1;
+  isRetryMode  = false;
 
-  // Reset stats
+  // Reset all stats
   score = 0; correctCount = 0; attempted = 0;
-  Object.keys(levelStats).forEach(k => { levelStats[k].correct = 0; levelStats[k].total = 0; });
+  wrongIds = new Set();
+  [1,2,3,4,5].forEach(l => { levelStats[l].c = 0; levelStats[l].t = 0; });
 
-  // Build question list: shuffle within each difficulty level
+  // Shuffle within each level
   sessionQuestions = [];
   [1,2,3,4,5].forEach(lvl => {
     if (lvl < startLevel) return;
-    const group = shuffle(allQuestions.filter(q => q.difficulty === lvl));
-    sessionQuestions.push(...group);
+    sessionQuestions.push(...shuffle(allQuestions.filter(q => q.difficulty === lvl)));
   });
 
   currentIdx = 0;
+  showScreen('quiz-screen');
+  renderQuestion();
+}
+
+// ─── Retry wrong answers ───────────────────────────────────
+function startRetry() {
+  if (wrongIds.size === 0) return;
+  isRetryMode = true;
+
+  const map = buildIdMap();
+  sessionQuestions = shuffle([...wrongIds].map(id => map[id]).filter(Boolean));
+  wrongIds = new Set(); // Reset for tracking retry misses
+  currentIdx = 0;
+
+  hide('retry-btn');
+  updateScore();
   showScreen('quiz-screen');
   renderQuestion();
 }
@@ -77,7 +172,7 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
-// ─── Question Rendering ───────────────────────────────────
+// ─── Render question ──────────────────────────────────────
 function renderQuestion() {
   if (currentIdx >= sessionQuestions.length) {
     showEndScreen();
@@ -88,25 +183,24 @@ function renderQuestion() {
   answered = false;
   hintUsed = false;
 
+  // Retry ribbon
+  document.getElementById('retry-ribbon').hidden = !isRetryMode;
+
   // Meta
   document.getElementById('diff-badge').textContent = `Level ${q.difficulty}`;
-  document.getElementById('diff-badge').className = `diff-badge diff-${q.difficulty}`;
-  document.getElementById('q-topic').textContent = q.topic || '';
-  document.getElementById('q-type-badge').textContent = q.type === 'fill' ? 'Fill in the Blank' : 'Arrange the Tokens';
-  document.getElementById('q-num').textContent = `Q${currentIdx + 1}`;
-  document.getElementById('q-text').textContent = q.question;
+  document.getElementById('diff-badge').className   = `diff-badge diff-${q.difficulty}`;
+  document.getElementById('q-topic').textContent     = q.topic || '';
+  document.getElementById('q-type-badge').textContent = q.type === 'fill' ? 'Fill in the Blank' : 'Arrange Tokens';
+  document.getElementById('q-num').textContent       = `Q${currentIdx + 1}`;
+  document.getElementById('q-text').textContent      = q.question;
 
-  // Hide hint/feedback
+  // Reset UI
   hide('hint-box');
   hide('feedback-box');
-
-  // Footer buttons
   show('hint-btn');
   show('skip-btn');
   show('submit-btn');
   hide('next-btn');
-
-  // Clear containers
   document.getElementById('fill-container').hidden = true;
   document.getElementById('drag-container').hidden = true;
 
@@ -119,51 +213,51 @@ function renderQuestion() {
   }
 
   updateProgress();
+  updateScore();
+  // Scroll to top of card on mobile
+  document.getElementById('q-card').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-// ── Fill in the Blank ──────────────────────────────────────
+// ── Fill in the Blank ─────────────────────────────────────
 function renderFill(q) {
   document.getElementById('fill-container').hidden = false;
   const body = document.getElementById('fill-body');
 
-  // Split template on ___ and insert inputs
   const parts = q.template.split('___');
   let html = '';
   parts.forEach((part, i) => {
     html += `<span class="kql-segment">${syntaxHighlight(part)}</span>`;
     if (i < parts.length - 1) {
-      html += `<input class="blank-input" data-blank="${i}" placeholder="?" autocomplete="off" autocorrect="off" spellcheck="false" />`;
+      html += `<input class="blank-input" data-blank="${i}" placeholder="?" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />`;
     }
   });
   body.innerHTML = html;
 
-  // Focus first input
   const first = body.querySelector('.blank-input');
-  if (first) first.focus();
+  if (first) {
+    // Slight delay so iOS keyboard doesn't fight the scroll
+    setTimeout(() => first.focus(), 300);
+  }
 
-  // Enter key submits
   body.querySelectorAll('.blank-input').forEach(inp => {
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') submitAnswer();
-    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
   });
 }
 
 function syntaxHighlight(code) {
-  // Very basic KQL syntax colouring
   return escapeHtml(code)
-    .replace(/\b(where|project|summarize|extend|order|sort|by|join|union|let|take|limit|top|count|distinct|parse|mv-expand|mv-apply|evaluate|find|range|lookup|not|and|or|in|between|contains|has|startswith|endswith|matches|regex|kind|on|with|asc|desc|step|from|to)\b/g, '<span class="kql-keyword">$1</span>')
+    .replace(/\b(where|project|summarize|extend|order|sort|by|join|union|let|take|limit|top|count|distinct|parse|mv-expand|mv-apply|evaluate|find|range|lookup|not|and|or|in|between|contains|has|startswith|endswith|matches|regex|kind|on|with|asc|desc|step|from|to|make-series|datatable|print|facet|partition)\b/g,
+      '<span class="kql-keyword">$1</span>')
     .replace(/&quot;[^&]*&quot;/g, s => `<span class="kql-string">${s}</span>`)
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="kql-number">$1</span>');
+    .replace(/\b(\d+(?:\.\d+)?[dhm]?)\b/g, '<span class="kql-number">$1</span>');
 }
 
-// ── Drag and Drop ──────────────────────────────────────────
+// ── Drag and Drop ─────────────────────────────────────────
 function renderDrag(q) {
   document.getElementById('drag-container').hidden = false;
 
-  // Create shuffled token objects with unique ids
   const shuffled = shuffle([...q.answer]);
-  bankTokens = shuffled.map((text, i) => ({ id: `tok-${i}`, text }));
+  bankTokens   = shuffled.map((text, i) => ({ id: `t${i}`, text }));
   answerTokens = [];
 
   renderBank();
@@ -174,26 +268,22 @@ function renderBank() {
   const bank = document.getElementById('token-bank');
   bank.innerHTML = '';
   bankTokens.forEach(tok => {
-    const chip = makeChip(tok, 'bank-chip', () => moveToAnswer(tok));
-    bank.appendChild(chip);
+    bank.appendChild(makeChip(tok, 'bank-chip', () => moveToAnswer(tok)));
   });
 }
 
 function renderAnswerArea() {
-  const area = document.getElementById('answer-area');
+  const area        = document.getElementById('answer-area');
   const placeholder = document.getElementById('answer-placeholder');
   area.innerHTML = '';
 
   if (answerTokens.length === 0) {
     area.appendChild(placeholder);
-    placeholder.hidden = false;
   } else {
     answerTokens.forEach((tok, idx) => {
-      const chip = makeChip(tok, 'answer-chip', () => moveToBank(tok, idx));
-      area.appendChild(chip);
+      area.appendChild(makeChip(tok, 'answer-chip', () => moveToBank(tok, idx)));
     });
   }
-
   updatePreview();
 }
 
@@ -201,7 +291,7 @@ function makeChip(tok, cls, clickFn) {
   const div = document.createElement('div');
   div.className = `token-chip ${cls}`;
   div.textContent = tok.text;
-  div.dataset.id = tok.id;
+  div.dataset.id  = tok.id;
   div.dataset.token = tok.text;
   div.addEventListener('click', clickFn);
   return div;
@@ -209,8 +299,8 @@ function makeChip(tok, cls, clickFn) {
 
 function moveToAnswer(tok) {
   if (answered) return;
-  bankTokens = bankTokens.filter(t => t.id !== tok.id);
-  answerTokens.push(tok);
+  bankTokens   = bankTokens.filter(t => t.id !== tok.id);
+  answerTokens = [...answerTokens, tok];
   renderBank();
   renderAnswerArea();
 }
@@ -218,58 +308,51 @@ function moveToAnswer(tok) {
 function moveToBank(tok, idx) {
   if (answered) return;
   answerTokens.splice(idx, 1);
-  bankTokens.push(tok);
+  bankTokens = [...bankTokens, tok];
   renderBank();
   renderAnswerArea();
 }
 
 function clearDrag() {
   if (answered) return;
-  // Return all answer tokens to bank
-  bankTokens = [...bankTokens, ...answerTokens];
+  bankTokens   = [...bankTokens, ...answerTokens];
   answerTokens = [];
   renderBank();
   renderAnswerArea();
 }
 
 function updatePreview() {
-  const preview = document.getElementById('answer-preview');
-  if (answerTokens.length === 0) {
-    preview.textContent = '—';
-  } else {
-    preview.textContent = answerTokens.map(t => t.text).join(' ');
-  }
+  document.getElementById('answer-preview').textContent =
+    answerTokens.length ? answerTokens.map(t => t.text).join(' ') : '—';
 }
 
-// ─── Answer Checking ──────────────────────────────────────
+// ─── Submit Answer ────────────────────────────────────────
 function submitAnswer() {
   if (answered) return;
   const q = sessionQuestions[currentIdx];
 
-  let isCorrect = false;
-
-  if (q.type === 'fill') {
-    isCorrect = checkFill(q);
-  } else {
-    isCorrect = checkDrag(q);
-  }
+  const isCorrect = q.type === 'fill' ? checkFill(q) : checkDrag(q);
 
   answered = true;
   attempted++;
-  levelStats[q.difficulty].total++;
+  levelStats[q.difficulty].t++;
 
   if (isCorrect) {
     correctCount++;
-    levelStats[q.difficulty].correct++;
-    const pts = hintUsed ? 5 : 10;
+    levelStats[q.difficulty].c++;
+    const pts = isRetryMode
+      ? (hintUsed ? PTS_RETRY_H : PTS_RETRY)
+      : (hintUsed ? PTS_HINT    : PTS_CORRECT);
     score += pts;
     showFeedback(true, q, pts);
   } else {
+    wrongIds.add(q.id);
     showFeedback(false, q, 0);
   }
 
   updateScore();
   updateProgress();
+  saveProgress();  // persist after every answer
 
   hide('submit-btn');
   hide('skip-btn');
@@ -279,41 +362,33 @@ function submitAnswer() {
 
 function checkFill(q) {
   const inputs = document.querySelectorAll('#fill-body .blank-input');
-  if (inputs.length === 0) return false;
-
-  let allCorrect = true;
+  let allOk = true;
   inputs.forEach((inp, i) => {
-    const userVal = inp.value.trim().toLowerCase();
+    const val      = inp.value.trim().toLowerCase();
     const expected = q.answers[i];
-    let match = false;
-
-    if (Array.isArray(expected)) {
-      match = expected.some(e => userVal === e.toLowerCase());
-    } else {
-      match = userVal === String(expected).toLowerCase();
-    }
-
+    const match    = Array.isArray(expected)
+      ? expected.some(e => val === e.toLowerCase())
+      : val === String(expected).toLowerCase();
     inp.classList.remove('correct-input', 'wrong-input');
     inp.classList.add(match ? 'correct-input' : 'wrong-input');
-    if (!match) allCorrect = false;
+    if (!match) allOk = false;
   });
-
-  return allCorrect;
+  return allOk;
 }
 
 function checkDrag(q) {
-  const userArr = answerTokens.map(t => t.text);
-  const correctArr = q.answer;
-  if (userArr.length !== correctArr.length) return false;
-  return userArr.every((t, i) => t.toLowerCase() === correctArr[i].toLowerCase());
+  const user = answerTokens.map(t => t.text.toLowerCase());
+  const corr = q.answer.map(t => t.toLowerCase());
+  return user.length === corr.length && user.every((t, i) => t === corr[i]);
 }
 
 // ─── Feedback ─────────────────────────────────────────────
 function showFeedback(correct, q, pts) {
   const box = document.getElementById('feedback-box');
   box.hidden = false;
-  box.className = `feedback-box ${correct ? 'correct' : 'wrong'}`;
+  box.className = `feedback-box ${correct ? 'correct' : 'wrong'} fade-in`;
 
+  // Build the correct answer string
   let answerStr = '';
   if (q.type === 'fill') {
     let tpl = q.template;
@@ -325,53 +400,54 @@ function showFeedback(correct, q, pts) {
     answerStr = q.answer.join(' ');
   }
 
+  const ptsStr = pts > 0 ? ` &nbsp;+${pts} pts` : '';
   box.innerHTML = `
-    <div class="fb-title">${correct ? '✅ Correct!' + (pts ? ` +${pts} pts` : '') : '❌ Incorrect'}</div>
-    ${q.explanation ? `<div style="margin:.35rem 0 .25rem">${escapeHtml(q.explanation)}</div>` : ''}
-    <div class="fb-answer">✓ ${escapeHtml(answerStr)}</div>
-    ${q.hint ? `<div style="margin-top:.4rem;font-size:.825rem;opacity:.8">💡 ${escapeHtml(q.hint)}</div>` : ''}
+    <div class="fb-title">${correct ? '✅ Correct!' + ptsStr : '❌ Incorrect'}</div>
+    <div class="fb-answer">${escapeHtml(answerStr)}</div>
+    ${q.hint ? `<div class="fb-hint">💡 ${escapeHtml(q.hint)}</div>` : ''}
   `;
-  box.classList.add('fade-in');
-  if (!correct) box.classList.add('shake');
 
-  // Highlight drag answer
-  if (q.type === 'drag' && !correct) {
+  if (!correct) {
+    box.classList.add('shake');
+    // Highlight wrong answer chips
     document.querySelectorAll('.answer-chip').forEach(c => {
       c.style.borderColor = 'var(--error)';
-      c.style.background = 'rgba(239,68,68,.15)';
+      c.style.background  = 'rgba(239,68,68,.18)';
     });
   }
+
+  // Scroll feedback into view on mobile
+  setTimeout(() => box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 100);
 }
 
 // ─── Hint ─────────────────────────────────────────────────
 function showHint() {
   const q = sessionQuestions[currentIdx];
-  if (!q.hint) return;
+  if (!q || !q.hint || answered) return;
   hintUsed = true;
-  const box = document.getElementById('hint-box');
   document.getElementById('hint-text').textContent = q.hint;
-  box.hidden = false;
+  show('hint-box');
 }
 
 // ─── Navigation ───────────────────────────────────────────
-function nextQuestion() {
-  currentIdx++;
-  renderQuestion();
-}
+function nextQuestion() { currentIdx++; renderQuestion(); }
 
 function skipQuestion() {
   attempted++;
-  levelStats[sessionQuestions[currentIdx].difficulty].total++;
+  levelStats[sessionQuestions[currentIdx].difficulty].t++;
+  wrongIds.add(sessionQuestions[currentIdx].id); // skipped = wrong for retry purposes
   currentIdx++;
+  saveProgress();
   renderQuestion();
 }
 
 // ─── Progress & Score ─────────────────────────────────────
 function updateProgress() {
   const total = sessionQuestions.length;
-  const pct = total > 0 ? (currentIdx / total) * 100 : 0;
+  const pct   = total > 0 ? (currentIdx / total) * 100 : 0;
   document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = `${currentIdx} / ${total}`;
+  document.getElementById('progress-label').textContent =
+    isRetryMode ? `Retry ${currentIdx} / ${total}` : `${currentIdx} / ${total}`;
 }
 
 function updateScore() {
@@ -380,32 +456,63 @@ function updateScore() {
 
 // ─── End Screen ───────────────────────────────────────────
 function showEndScreen() {
-  const acc = attempted > 0 ? Math.round((correctCount / attempted) * 100) : 0;
-  document.getElementById('end-score').textContent = score;
-  document.getElementById('end-correct').textContent = correctCount;
-  document.getElementById('end-total').textContent = attempted;
-  document.getElementById('end-acc').textContent = acc + '%';
+  clearSaved(); // Session done – clear save
 
+  const acc = attempted > 0 ? Math.round((correctCount / attempted) * 100) : 0;
+
+  document.getElementById('end-title').textContent = isRetryMode ? 'Retry Complete!' : 'Practice Complete!';
+  document.getElementById('end-score').textContent   = score;
+  document.getElementById('end-correct').textContent = correctCount;
+  document.getElementById('end-total').textContent   = attempted;
+  document.getElementById('end-acc').textContent     = acc + '%';
+
+  // Level breakdown
   const breakdown = document.getElementById('level-results');
   breakdown.innerHTML = '';
   [1,2,3,4,5].forEach(lvl => {
     const st = levelStats[lvl];
-    if (st.total === 0) return;
-    const a = Math.round((st.correct / st.total) * 100);
+    if (st.t === 0) return;
+    const a = Math.round((st.c / st.t) * 100);
     const row = document.createElement('div');
     row.className = 'lvl-result-row';
     row.innerHTML = `
-      <span class="lvl-name lp-${lvl}">Level ${lvl}</span>
-      <span>${st.correct} / ${st.total} correct</span>
+      <span class="lvl-name lp-${lvl}" style="border-color:var(--l${lvl});color:var(--l${lvl})">Level ${lvl}</span>
+      <span>${st.c} / ${st.t} correct</span>
       <span class="lvl-acc">${a}%</span>
     `;
     breakdown.appendChild(row);
   });
 
+  // Retry button: show if there are wrong answers from this session
+  const retryBtn = document.getElementById('retry-btn');
+  if (wrongIds.size > 0) {
+    retryBtn.textContent = `🔁 Retry ${wrongIds.size} Wrong Answer${wrongIds.size === 1 ? '' : 's'} (½ pts)`;
+    show('retry-btn');
+  } else {
+    hide('retry-btn');
+  }
+
   showScreen('end-screen');
 }
 
 // ─── Utility ──────────────────────────────────────────────
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function show(id) { const el = document.getElementById(id); if (el) el.hidden = false; }
 function hide(id) { const el = document.getElementById(id); if (el) el.hidden = true; }
 

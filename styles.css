@@ -280,12 +280,13 @@ body {
 .feedback-box.wrong {
   background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: #fca5a5;
 }
-.feedback-box .fb-title { font-weight: 700; font-size: 1rem; margin-bottom: .35rem; display: flex; align-items: center; gap: .5rem; }
+.feedback-box .fb-title { font-weight: 700; font-size: 1rem; margin-bottom: .35rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .feedback-box .fb-answer {
   margin-top: .5rem; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   background: rgba(0,0,0,.25); padding: .4rem .7rem; border-radius: 6px; font-size: .875rem;
-  color: #e2e8f0;
+  color: #e2e8f0; word-break: break-all; white-space: pre-wrap;
 }
+.feedback-box .fb-hint { margin-top: .4rem; font-size: .82rem; opacity: .8; }
 
 /* Quiz footer */
 .quiz-footer {
@@ -344,12 +345,104 @@ body {
 .pulse-correct { animation: pulseGreen .5s ease; }
 @keyframes pulseGreen { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.4); } 100% { box-shadow: 0 0 0 12px transparent; } }
 
-/* ─── Responsive ────────────────────────────────── */
-@media (max-width: 600px) {
-  .q-card { padding: 1.25rem 1rem; }
-  .quiz-header { flex-wrap: wrap; }
+/* ─── Continue Banner (saved progress) ──────────── */
+.continue-banner {
+  width: 100%; max-width: 480px;
+  background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(139,92,246,.15));
+  border: 1px solid rgba(139,92,246,.4);
+  border-radius: 14px; padding: 1rem 1.1rem;
+  display: flex; flex-direction: column; gap: .75rem;
+}
+.continue-info { display: flex; align-items: center; gap: .75rem; }
+.continue-icon { font-size: 1.5rem; flex-shrink: 0; }
+.continue-title { font-weight: 700; font-size: .95rem; color: var(--text); }
+.continue-detail { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+.continue-btns { display: flex; gap: .6rem; }
+.continue-btns .btn { flex: 1; justify-content: center; }
+
+/* ─── Retry Ribbon ──────────────────────────────── */
+.retry-ribbon {
+  background: linear-gradient(90deg, rgba(245,158,11,.15), rgba(251,146,60,.1));
+  border-bottom: 1px solid rgba(245,158,11,.3);
+  color: #fcd34d; font-size: .8rem; font-weight: 600;
+  padding: .45rem 1rem; text-align: center;
+  /* Safe area handled by parent */
+}
+
+/* ─── Warning button ────────────────────────────── */
+.btn-warning { background: rgba(245,158,11,.2); color: #fcd34d; border: 1px solid rgba(245,158,11,.4); }
+.btn-warning:hover { background: rgba(245,158,11,.35); border-color: rgba(245,158,11,.7); }
+
+/* ─── Responsive & iPhone 16 Pro ────────────────── */
+
+/* iOS safe area insets (Dynamic Island, home bar) */
+.quiz-header {
+  padding-top: max(.8rem, env(safe-area-inset-top));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+.quiz-footer {
+  padding-bottom: max(.9rem, env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+#welcome-screen, #end-screen {
+  padding-top: max(2rem, env(safe-area-inset-top));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+/* Touch targets: minimum 44×44pt (Apple HIG) */
+.btn            { min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.token-chip     { min-height: 44px; padding: .5rem 1rem; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.blank-input    { min-height: 40px; font-size: 16px; /* 16px prevents iOS auto-zoom */ }
+.level-select   { min-height: 44px; font-size: 16px; }
+
+/* Prevent double-tap zoom on buttons */
+.btn, .token-chip { user-select: none; }
+
+@media (max-width: 430px) {
+  /* iPhone 16 Pro is 393pt wide */
+  html { font-size: 15px; }
+  .q-card { padding: 1rem .9rem; gap: .9rem; }
+  .quiz-header { flex-wrap: wrap; gap: .4rem; }
+  .hdr-brand { font-size: .85rem; }
   .hdr-progress { order: 3; width: 100%; max-width: 100%; }
-  .quiz-footer { flex-wrap: wrap; justify-content: center; }
-  .footer-left, .footer-right { width: 100%; justify-content: center; }
-  .logo-kql { font-size: 2.5rem; }
+  .hdr-score { flex-direction: row; align-items: center; gap: .4rem; }
+  .score-lbl { font-size: .75rem; }
+  .score-val { font-size: 1.1rem; }
+
+  .q-text { font-size: 1rem; }
+  .q-meta { gap: .4rem; }
+  .diff-badge { font-size: .7rem; padding: .2rem .55rem; }
+  .q-type-badge { font-size: .68rem; padding: .18rem .5rem; }
+
+  /* Code block: allow horizontal scroll on small screen */
+  .code-block { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .code-body { font-size: .875rem; white-space: pre; min-width: max-content; }
+  .blank-input { min-width: 72px; font-size: 16px; }
+
+  /* Bigger token chips on mobile */
+  .token-chip { font-size: .875rem; min-height: 48px; border-radius: 10px; }
+  .token-bank, .answer-area { gap: .45rem; }
+
+  /* Footer: stack vertically if needed */
+  .quiz-footer { flex-wrap: wrap; gap: .6rem; }
+  .footer-left  { order: 2; }
+  .footer-right { order: 1; width: 100%; }
+  .footer-right .btn { flex: 1; justify-content: center; }
+
+  /* Welcome */
+  .logo-kql { font-size: 2.8rem; }
+  .stats-row { gap: .6rem; }
+  .stat-box { min-width: 80px; padding: .75rem 1rem; }
+  .stat-num { font-size: 1.5rem; }
+  .continue-btns { flex-direction: column; }
+  .end-stats { gap: .6rem; }
+  .end-num { font-size: 1.6rem; }
+  .end-actions { flex-direction: column; }
+  .end-actions .btn { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 600px) {
+  .quiz-main { padding: 1rem .75rem; }
 }
