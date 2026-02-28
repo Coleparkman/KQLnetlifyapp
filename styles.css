@@ -34,9 +34,9 @@ body {
 
 /* ─── Screens ───────────────────────────────────── */
 .screen { display: none; }
-.screen.active { display: flex; flex-direction: column; min-height: 100dvh; }
-#quiz-screen   { height: 100dvh; min-height: unset; overflow: hidden; }
-.quiz-main     { -webkit-overflow-scrolling: touch; }
+.screen.active { display: flex; flex-direction: column; }
+#quiz-screen   { height: 100dvh; overflow: hidden; }
+#welcome-screen, #end-screen { min-height: 100dvh; }
 
 /* ─── Buttons ───────────────────────────────────── */
 .btn {
@@ -122,11 +122,11 @@ body {
 
 /* Header */
 .quiz-header {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   padding: .8rem 1.5rem;
   background: var(--surface); border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 10;
-  gap: 1rem;
+  z-index: 10; gap: .75rem;
 }
 .hdr-brand { font-weight: 700; font-size: .95rem; color: var(--accent); flex-shrink: 0; }
 .hdr-progress { display: flex; flex-direction: column; align-items: center; gap: .25rem; flex: 1; max-width: 400px; }
@@ -146,8 +146,9 @@ body {
 
 /* Main quiz area */
 .quiz-main {
-  flex: 1; display: flex; align-items: flex-start; justify-content: center;
-  padding: 2rem 1rem; overflow-y: auto;
+  flex: 1; min-height: 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 2rem 1rem; overflow-y: auto; -webkit-overflow-scrolling: touch;
 }
 .q-card {
   width: 100%; max-width: 820px;
@@ -292,12 +293,46 @@ body {
 
 /* Quiz footer */
 .quiz-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: .9rem 1.5rem; gap: 1rem;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: .6rem 1rem;
+  padding-bottom: max(.6rem, env(safe-area-inset-bottom));
+  padding-left:   max(1rem, env(safe-area-inset-left));
+  padding-right:  max(1rem, env(safe-area-inset-right));
+  gap: .65rem;
   background: var(--surface); border-top: 1px solid var(--border);
 }
-.footer-left  { display: flex; gap: .6rem; }
-.footer-right { display: flex; gap: .6rem; }
+
+/* Icon buttons */
+.btn-icon {
+  display: inline-flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: .1rem; width: 58px; height: 58px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface2); color: var(--text);
+  cursor: pointer; font-size: 1.35rem; line-height: 1;
+  transition: all .15s ease;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.btn-icon .icon-lbl {
+  font-size: .58rem; color: var(--muted);
+  font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+.btn-icon:active { transform: scale(.94); }
+.btn-icon:hover  { background: var(--surface3); border-color: var(--accent); }
+.btn-icon:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn-icon-primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.btn-icon-primary:hover { background: var(--accent-h); border-color: var(--accent-h); }
+.btn-icon-primary .icon-lbl { color: rgba(255,255,255,.75); }
+.btn-icon-warn {
+  background: rgba(245,158,11,.15); border-color: rgba(245,158,11,.4); color: #fcd34d;
+}
+.btn-icon-warn:hover { background: rgba(245,158,11,.3); }
+.btn-icon-warn .icon-lbl { color: rgba(252,211,77,.75); }
 
 /* ═══════════════════════════════════════════════════
    END SCREEN
@@ -379,15 +414,11 @@ body {
 
 /* iOS safe area insets (Dynamic Island, home bar) */
 .quiz-header {
-  padding-top: max(.8rem, env(safe-area-inset-top));
-  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-top:   max(.8rem, env(safe-area-inset-top));
+  padding-left:  max(1.5rem, env(safe-area-inset-left));
   padding-right: max(1.5rem, env(safe-area-inset-right));
 }
-.quiz-footer {
-  padding-bottom: max(.9rem, env(safe-area-inset-bottom));
-  padding-left: max(1.5rem, env(safe-area-inset-left));
-  padding-right: max(1.5rem, env(safe-area-inset-right));
-}
+/* quiz-footer safe-area already handled inline above */
 #welcome-screen, #end-screen {
   padding-top: max(2rem, env(safe-area-inset-top));
   padding-bottom: max(2rem, env(safe-area-inset-bottom));
@@ -406,12 +437,13 @@ body {
   /* iPhone 16 Pro is 393pt wide */
   html { font-size: 15px; }
   .q-card { padding: 1rem .9rem; gap: .9rem; }
-  .quiz-header { flex-wrap: wrap; gap: .4rem; }
-  .hdr-brand { font-size: .85rem; }
-  .hdr-progress { order: 3; width: 100%; max-width: 100%; }
   .hdr-score { flex-direction: row; align-items: center; gap: .4rem; }
   .score-lbl { font-size: .75rem; }
   .score-val { font-size: 1.1rem; }
+
+  /* Header: hide brand text on small screens to keep single row */
+  .hdr-brand { display: none; }
+  .hdr-progress { max-width: 100%; }
 
   .q-text { font-size: 1rem; }
   .q-meta { gap: .4rem; }
@@ -427,11 +459,9 @@ body {
   .token-chip { font-size: .875rem; min-height: 48px; border-radius: 10px; }
   .token-bank, .answer-area { gap: .45rem; }
 
-  /* Footer: stack vertically if needed */
-  .quiz-footer { flex-wrap: wrap; gap: .6rem; }
-  .footer-left  { order: 2; }
-  .footer-right { order: 1; width: 100%; }
-  .footer-right .btn { flex: 1; justify-content: center; }
+  /* Icon buttons: slightly smaller on very tight screens */
+  .btn-icon { width: 52px; height: 54px; font-size: 1.2rem; }
+  .btn-icon .icon-lbl { font-size: .55rem; }
 
   /* Welcome */
   .logo-kql { font-size: 2.8rem; }

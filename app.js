@@ -5,6 +5,34 @@
 
 // ─── Constants ────────────────────────────────────────────
 const SAVE_KEY    = 'kql-progress-v2';
+
+// Pool of plausible-but-wrong KQL tokens used as drag distractors
+const DISTRACTORS = [
+  'limit', 'take', 'top', 'distinct', 'sample',
+  'mv-expand', 'parse', 'evaluate', 'facet', 'datatable',
+  'make_list()', 'make_set()', 'dcount()', 'arg_max()', 'arg_min()',
+  'percentile()', 'variance()', 'stdev()',
+  '1d', '7d', '30d', '1h', '6h', '24h',
+  'kind=leftouter', 'kind=inner', 'kind=fullouter',
+  'toupper()', 'split()', 'replace()', 'trim()', 'strlen()',
+  'extract()', 'parse_json()', 'todynamic()',
+  'TimeGenerated', 'Computer', 'EventID', 'Message',
+  'SourceIP', 'DestinationIP', 'Account', 'ProcessName',
+  'has_any()', 'has_all()', 'in~', 'between',
+  'asc', 'desc', 'true', 'false', 'null',
+  'project-rename', 'project-away', 'serialize',
+  'countif()', 'sumif()', 'maxif()', 'minif()',
+  '!=', '!~', '!contains', '!has', '!in',
+  '>=', '<=', 'ago()', 'now()', 'bin()',
+  'tostring()', 'toint()', 'todouble()', 'tolower()',
+  'iif()', 'coalesce()', 'isnotnull()', 'isnull()',
+];
+
+function getDistractors(answer, count) {
+  const lower = new Set(answer.map(t => t.toLowerCase()));
+  const pool  = DISTRACTORS.filter(d => !lower.has(d.toLowerCase()));
+  return shuffle(pool).slice(0, count);
+}
 const PTS_CORRECT = 10;
 const PTS_HINT    = 5;   // correct but used hint
 const PTS_RETRY   = 5;   // correct on retry
@@ -256,8 +284,9 @@ function syntaxHighlight(code) {
 function renderDrag(q) {
   document.getElementById('drag-container').hidden = false;
 
-  const shuffled = shuffle([...q.answer]);
-  bankTokens   = shuffled.map((text, i) => ({ id: `t${i}`, text }));
+  const distractors = getDistractors(q.answer, 3);
+  const allTokens   = shuffle([...q.answer, ...distractors]);
+  bankTokens   = allTokens.map((text, i) => ({ id: `t${i}`, text }));
   answerTokens = [];
 
   renderBank();
