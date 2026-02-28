@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover extends into Dynamic Island / notch area -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>KQL Practice | Master Kusto Query Language</title>
+
+  <!-- PWA / Home Screen -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <meta name="theme-color" content="#3b82f6" />
+
+  <!-- iOS-specific PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="KQL" />
+
+  <!-- Android -->
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ══════════════ WELCOME SCREEN ══════════════ -->
+    <section id="welcome-screen" class="screen active">
+      <div class="welcome-content">
+        <div class="logo-wrap">
+          <span class="logo-kql">KQL</span>
+          <span class="logo-sub">Practice</span>
+        </div>
+        <p class="welcome-tagline">Master Kusto Query Language through interactive exercises</p>
+
+        <!-- Continue saved progress banner -->
+        <div id="continue-banner" class="continue-banner" hidden>
+          <div class="continue-info">
+            <span class="continue-icon">💾</span>
+            <div>
+              <div class="continue-title">Continue where you left off?</div>
+              <div class="continue-detail" id="continue-detail">Level 1 · Q1 · Score 0</div>
+            </div>
+          </div>
+          <div class="continue-btns">
+            <button id="continue-btn" class="btn btn-primary">Continue</button>
+            <button id="new-game-btn" class="btn btn-ghost">Start Fresh</button>
+          </div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-box"><span class="stat-num">420+</span><span class="stat-lbl">Questions</span></div>
+          <div class="stat-box"><span class="stat-num">5</span><span class="stat-lbl">Levels</span></div>
+          <div class="stat-box"><span class="stat-num">2</span><span class="stat-lbl">Types</span></div>
+        </div>
+
+        <div class="level-preview">
+          <div class="lp-item lp-1">Level 1 &mdash; Basics</div>
+          <div class="lp-item lp-2">Level 2 &mdash; Filtering &amp; Sorting</div>
+          <div class="lp-item lp-3">Level 3 &mdash; Functions &amp; Aggregations</div>
+          <div class="lp-item lp-4">Level 4 &mdash; Joins &amp; Parsing</div>
+          <div class="lp-item lp-5">Level 5 &mdash; Expert Scenarios</div>
+        </div>
+
+        <div class="mode-select">
+          <label class="mode-label">Start from:</label>
+          <select id="start-level" class="level-select">
+            <option value="1">Level 1 (Recommended)</option>
+            <option value="2">Level 2</option>
+            <option value="3">Level 3</option>
+            <option value="4">Level 4</option>
+            <option value="5">Level 5</option>
+          </select>
+        </div>
+
+        <button id="start-btn" class="btn btn-primary btn-lg">Start Practice</button>
+      </div>
+    </section>
+
+    <!-- ══════════════ QUIZ SCREEN ══════════════ -->
+    <section id="quiz-screen" class="screen">
+      <header class="quiz-header">
+        <span class="hdr-brand">KQL</span>
+        <div class="hdr-progress">
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <span class="progress-label" id="progress-label">0 / 420</span>
+        </div>
+        <div class="hdr-score">
+          <span class="score-lbl">Score</span>
+          <span class="score-val" id="score-val">0</span>
+        </div>
+      </header>
+
+      <!-- Retry mode ribbon -->
+      <div id="retry-ribbon" class="retry-ribbon" hidden>
+        🔁 Retry Mode — correct answers score ½ points
+      </div>
+
+      <main class="quiz-main">
+        <div class="q-card" id="q-card">
+          <!-- Meta row -->
+          <div class="q-meta">
+            <span class="diff-badge" id="diff-badge">Level 1</span>
+            <span class="q-topic" id="q-topic">Topic</span>
+            <span class="q-type-badge" id="q-type-badge">Fill in the Blank</span>
+            <span class="q-num" id="q-num">Q1</span>
+          </div>
+
+          <!-- Question text -->
+          <h2 class="q-text" id="q-text"></h2>
+
+          <!-- ── Fill in the Blank ── -->
+          <div id="fill-container" class="fill-container" hidden>
+            <div class="code-block">
+              <div class="code-bar">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="code-lang-tag">KQL</span>
+              </div>
+              <div class="code-body" id="fill-body"></div>
+            </div>
+          </div>
+
+          <!-- ── Drag and Drop ── -->
+          <div id="drag-container" class="drag-container" hidden>
+            <div class="token-section">
+              <div class="section-label">Available Tokens — tap to add:</div>
+              <div class="token-bank" id="token-bank"></div>
+            </div>
+            <div class="answer-section">
+              <div class="section-label">Your Answer:</div>
+              <div class="answer-area" id="answer-area">
+                <span class="answer-placeholder" id="answer-placeholder">Tap tokens above to build your query…</span>
+              </div>
+            </div>
+            <div class="answer-preview-wrap">
+              <span class="preview-lbl">Preview:</span>
+              <code class="answer-preview" id="answer-preview"></code>
+            </div>
+          </div>
+
+          <!-- Hint box -->
+          <div id="hint-box" class="hint-box" hidden>
+            <span class="hint-icon">💡</span>
+            <span id="hint-text"></span>
+          </div>
+
+          <!-- Feedback -->
+          <div id="feedback-box" class="feedback-box" hidden></div>
+        </div>
+      </main>
+
+      <footer class="quiz-footer">
+        <div class="footer-left">
+          <button id="hint-btn" class="btn btn-ghost">💡 Hint</button>
+          <button id="clear-btn" class="btn btn-ghost" hidden>↩ Clear</button>
+        </div>
+        <div class="footer-right">
+          <button id="skip-btn" class="btn btn-secondary">Skip</button>
+          <button id="submit-btn" class="btn btn-primary">Submit</button>
+          <button id="next-btn" class="btn btn-primary" hidden>Next →</button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- ══════════════ END SCREEN ══════════════ -->
+    <section id="end-screen" class="screen">
+      <div class="end-content">
+        <div class="end-trophy">🏆</div>
+        <h2 class="end-title" id="end-title">Practice Complete!</h2>
+        <div class="end-stats">
+          <div class="end-stat"><span class="end-num" id="end-score">0</span><span class="end-lbl">Points</span></div>
+          <div class="end-stat"><span class="end-num" id="end-correct">0</span><span class="end-lbl">Correct</span></div>
+          <div class="end-stat"><span class="end-num" id="end-total">0</span><span class="end-lbl">Attempted</span></div>
+          <div class="end-stat"><span class="end-num" id="end-acc">0%</span><span class="end-lbl">Accuracy</span></div>
+        </div>
+        <div class="level-results" id="level-results"></div>
+        <div class="end-actions">
+          <button id="retry-btn" class="btn btn-warning btn-lg" hidden>🔁 Retry Wrong Answers</button>
+          <button id="restart-btn" class="btn btn-primary btn-lg">Practice Again</button>
+          <button id="back-home-btn" class="btn btn-secondary btn-lg">Change Level</button>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- #app -->
+
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Register service worker for offline / PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
